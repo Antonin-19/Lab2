@@ -28,7 +28,7 @@ app.get("/", (req, res) => {        // A simple route to check it works!
 app.post("/cart", (req, res) => {
     const schema = Joi.object({
         item_name: Joi.string().required(),
-        item_price: Joi.double().required(),
+        item_price: Joi.float().required(),
         quantity: Joi.int().min(1).required()
     })
 
