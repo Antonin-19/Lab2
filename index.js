@@ -1,17 +1,45 @@
 const express = require("express"); // Pull in the express package to use
-const app = express();              // initialise the express app
+const Joi = require('joi');  
+const app = express();              // initialise the express app  
+
+const allowCrossOriginRequests = (req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header(
+        'Access-Control-Allow-Headers',
+        'Origin, X-Requested-with, Content-Type, Accept'
+    );
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE');
+    next();
+}
+
 app.use(express.json());            // Middleware to parse JSON bodies
+app.use(allowCrossOriginRequests);
 
 const port = 3000;                  // Define a port for this app to run on
 
 let carts = [];
 let next_id = 1;
 
+// Endpoints
 app.get("/", (req, res) => {        // A simple route to check it works!
     res.send("Hello World!");
 })
 
 app.post("/cart", (req, res) => {
+    const schema = Joi.object({
+        item_name: Joi.string().required(),
+        item_price: Joi.double().required(),
+        quantity: Joi.int().min(1).required()
+    })
+
+    console.log(schema.validate(req.body));
+
+    const { error } = schema.validate(req.body);
+
+    console.log(error);
+
+    if(error) return res.status(400).send(error.details[0].message);
+
     let cart = {
         item_id: next_id,
         item_name: req.body.item_name,
