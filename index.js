@@ -1,6 +1,32 @@
 const express = require("express"); // Pull in the express package to use
 const Joi = require('joi');  
 const app = express();              // initialise the express app  
+const sqlite3 = require("sqlite3").verbose();
+
+const DBSOURCE = "db.sqlite" // the sqlite file
+
+let db = new sqlite3.Database(DBSOURCE, (err) => {
+    if (err){
+        console.error(err.message);
+        throw err;
+    }else{
+        console.log("Connected to the SQLite DB");
+
+        db.run(`CREATE TABLE carts (
+            item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_name TEXT NOT null,
+            item_price NUMBER NOT null,
+            quantity INTEGER NOT NULL 
+        )
+        `, (err) => {
+            if(err){
+                console.log("Carts table already exists");
+            }else{
+                console.log("Carts table created")
+            }
+        });
+    }   
+})
 
 const allowCrossOriginRequests = (req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
@@ -17,19 +43,56 @@ app.use(allowCrossOriginRequests);
 
 const port = 3000;                  // Define a port for this app to run on
 
-let carts = [];
 let next_id = 1;
 
 // Endpoints
-app.get("/", (req, res) => {        // A simple route to check it works!
-    res.send("Hello World!");
+app.get("/cart", (req, res) => {        // A simple route to check it works!
+    let results = [];
+
+    db.each(
+        "SELECT * FROM CARTS",
+        [],
+        (err, row) => {
+            if(err) return res.status(400).send("Couldn't get cart");
+
+            results.push({
+                item_id: row.item_id,
+                item_name: row.item_name,
+                item_price: row.item_price,
+                quantity: row.quantity
+            })
+        },
+        (err, num_rows) => {
+            if(err) return res.status(400).send("Couldn't get cart");
+
+            return res.send(results);
+        }
+    )
+})
+
+app.get("/cart/:id", (req, res) => {
+    const id = parseInt(req.params.item_id);
+
+    const sql = 'SELECT * FROM carts WHERE item_id=?'
+
+    db.get(sql, [id], (err, row) => {
+        if (err) return res.status(500).send("Somethings broke")
+        if(!row) return res.status(404).send("Not Found")
+
+        return res.send({
+            item_id: row.item_id,
+            item_name: row.item_name,
+            item_price: row.item_price,
+            quantity: row.quantity
+        })
+    });
 })
 
 app.post("/cart", (req, res) => {
     const schema = Joi.object({
         item_name: Joi.string().required(),
-        item_price: Joi.float().required(),
-        quantity: Joi.int().min(1).required()
+        item_price: Joi.number().positive().required(),
+        quantity: Joi.number().min(1).required()
     })
 
     console.log(schema.validate(req.body));
@@ -40,20 +103,22 @@ app.post("/cart", (req, res) => {
 
     if(error) return res.status(400).send(error.details[0].message);
 
-    let cart = {
-        item_id: next_id,
-        item_name: req.body.item_name,
-        item_price: req.body.item_price,
-        quantity: req.body.quantity
-    };
+    const sql = 'INSERT INTO carts (item_name, item_price, quantity) VALUES (?,?,?)'
+    let values = [req.body.item_name, req.body.item_price, req.body.quantity];
 
-    carts.push(cart);
-    next_id++;
+    db.run(sql, values, function(err){
+        if(err) return document(err)
 
-    return res.status(201).json(cart);
+        return res.status(201).send({
+            item_id: this.next_id,
+            item_name: req.body.item_name,
+            item_price: req.body.item_price,
+            quantity: req.body.quantity
+        });
+    })
 })
 
-app.get("/cart", (req, res) => {
+app.get("/cartData", (req, res) => {
     const numberOfItems = carts.reduce(
         (total,item) => total + item.quantity, 0
     );
