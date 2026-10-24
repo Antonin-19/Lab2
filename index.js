@@ -43,8 +43,6 @@ app.use(allowCrossOriginRequests);
 
 const port = 3000;                  // Define a port for this app to run on
 
-let next_id = 1;
-
 // Endpoints
 app.get("/cart", (req, res) => {        // A simple route to check it works!
     let results = [];
@@ -71,7 +69,7 @@ app.get("/cart", (req, res) => {        // A simple route to check it works!
 })
 
 app.get("/cart/:id", (req, res) => {
-    const id = parseInt(req.params.item_id);
+    const id = parseInt(req.params.id);
 
     const sql = 'SELECT * FROM carts WHERE item_id=?'
 
@@ -93,7 +91,7 @@ app.post("/cart", (req, res) => {
         item_name: Joi.string().required(),
         item_price: Joi.number().positive().required(),
         quantity: Joi.number().min(1).required()
-    })
+    });
 
     console.log(schema.validate(req.body));
 
@@ -110,7 +108,7 @@ app.post("/cart", (req, res) => {
         if(err) return document(err)
 
         return res.status(201).send({
-            item_id: this.next_id,
+            item_id: this.lastID,
             item_name: req.body.item_name,
             item_price: req.body.item_price,
             quantity: req.body.quantity
@@ -119,41 +117,60 @@ app.post("/cart", (req, res) => {
 })
 
 app.get("/cartData", (req, res) => {
-    const numberOfItems = carts.reduce(
-        (total,item) => total + item.quantity, 0
-    );
+    const sql = "SELECT * FROM carts";
 
-    const totalPrice = carts.reduce(
-        (total,item) => total + (item.item_price + item.quantity), 0
-    );
+    db.all(sql, [], (err, rows) => {
+        if (err) {
+            return res.status(500).send("Something broke");
+        }
 
-    return res.status(200).json({
-        number_of_items: numberOfItems,
-        total_price: Number(totalPrice.toFixed(2)),
-        items: carts.map(item => item.item_id)
+        const numberOfItems = rows.reduce(
+            (total, item) => total + item.quantity, 0
+        );
+
+        const totalPrice = rows.reduce(
+            (total, item) => total + (item.item_price * item.quantity), 0
+        );
+
+        return res.status(200).json({
+            number_of_items: numberOfItems,
+            total_price: Number(totalPrice.toFixed(2)),
+            items: rows.map(item => item.item_id)
+        });
     });
-})
+});
 
 app.delete("/cart/:id", (req, res) => {
-    let id = parseInt(req.params.id);
-    const cart = carts.find(temp => temp.item_id === id);
-    if(!cart) return res.status(404).send("No user found");
+    const id = parseInt(req.params.id);
+    
+    const sql = 'DELETE FROM carts WHERE item_id=?'
 
-    const index = carts.indexOf(cart);
-    carts.splice(index, 1);
-
-    return res.status(200).send("User deleted");
-})
+    db.run(sql, [id], (err) => {
+        if (err) return res.status(500).send("Somethings broke")
+        return res.status(200).send('');
+    })
+});
 
 app.patch("/cart/:id", (req, res) => {
-    let id = parseInt(req.params.id);
-    const cart = carts.find(temp => temp.item_id === id);
+    const id = parseInt(req.params.id);
 
-    if (!cart) return res.status(404).send("This ID doesn't exist");
+    const schema = Joi.object({
+        item_name: Joi.string().required(),
+        item_price: Joi.number().positive().required(),
+        quantity: Joi.number().min(1).required()
+    });
 
-    cart.quantity = req.body.quantity;
-    return res.status(200).send("The user has been updated");
-})
+    const { error } = schema.validate(req.body);
+    if(error) return res.status(400).send(error.details[0].message);
+
+    const sql = 'UPDATE carts SET item_name=?, item_price=?, quantity=? WHERE item_id=?'
+    const values = [req.body.item_name, req.body.item_price, req.body.quantity, id];
+
+    db.run(sql, values, (err) => {
+        if (err) return res.status(500).send("Somethings broke")
+        return res.status(200).send('');
+    })
+});
 
 app.listen(port, () => {            // Make sure the app can be accessed
     console.log("App is listing on port: " + port);
