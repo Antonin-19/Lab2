@@ -1,47 +1,160 @@
 const express = require("express"); // Pull in the express package to use
-const app = express();              // initialise the express app
+const Joi = require('joi');  
+const app = express();              // initialise the express app  
+const sqlite3 = require("sqlite3").verbose();
+
+const DBSOURCE = "db.sqlite" // the sqlite file
+
+let db = new sqlite3.Database(DBSOURCE, (err) => {
+    if (err){
+        console.error(err.message);
+        throw err;
+    }else{
+        console.log("Connected to the SQLite DB");
+
+        db.run(`CREATE TABLE carts (
+            item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_name TEXT NOT null,
+            item_price NUMBER NOT null,
+            quantity INTEGER NOT NULL 
+        )
+        `, (err) => {
+            if(err){
+                console.log("Carts table already exists");
+            }else{
+                console.log("Carts table created")
+            }
+        });
+    }   
+})
+
+const allowCrossOriginRequests = (req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header(
+        'Access-Control-Allow-Headers',
+        'Origin, X-Requested-with, Content-Type, Accept'
+    );
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE');
+    next();
+}
+
 app.use(express.json());            // Middleware to parse JSON bodies
+app.use(allowCrossOriginRequests);
 
 const port = 3000;                  // Define a port for this app to run on
 
-app.get("/", (req, res) => {        // A simple route to check it works!
-    res.send("Hello World!");
-})
-
-app.listen(port, () => {            // Make sure the app can be accessed
-    console.log("App is listing on port: " + port);
-})
-
-let users = [];
 let next_id = 1;
 
-app.post("/users", (req, res) => {
-    let user = {
-        user_id: next_id,
-        user_name: req.body.name
-    }
+// Endpoints
+app.get("/cart", (req, res) => {        // A simple route to check it works!
+    let results = [];
 
-    users.push(user);
-    next_id++;
+    db.each(
+        "SELECT * FROM CARTS",
+        [],
+        (err, row) => {
+            if(err) return res.status(400).send("Couldn't get cart");
 
-    return res.status(201).json(users);
+            results.push({
+                item_id: row.item_id,
+                item_name: row.item_name,
+                item_price: row.item_price,
+                quantity: row.quantity
+            })
+        },
+        (err, num_rows) => {
+            if(err) return res.status(400).send("Couldn't get cart");
+
+            return res.send(results);
+        }
+    )
 })
 
-app.get("/users", (req, res) => {
-    return res.status(200).send(users);
+app.get("/cart/:id", (req, res) => {
+    const id = parseInt(req.params.item_id);
+
+    const sql = 'SELECT * FROM carts WHERE item_id=?'
+
+    db.get(sql, [id], (err, row) => {
+        if (err) return res.status(500).send("Somethings broke")
+        if(!row) return res.status(404).send("Not Found")
+
+        return res.send({
+            item_id: row.item_id,
+            item_name: row.item_name,
+            item_price: row.item_price,
+            quantity: row.quantity
+        })
+    });
 })
 
-app.delete("/users/:id", (req, res) => {
+app.post("/cart", (req, res) => {
+    const schema = Joi.object({
+        item_name: Joi.string().required(),
+        item_price: Joi.number().positive().required(),
+        quantity: Joi.number().min(1).required()
+    })
+
+    console.log(schema.validate(req.body));
+
+    const { error } = schema.validate(req.body);
+
+    console.log(error);
+
+    if(error) return res.status(400).send(error.details[0].message);
+
+    const sql = 'INSERT INTO carts (item_name, item_price, quantity) VALUES (?,?,?)'
+    let values = [req.body.item_name, req.body.item_price, req.body.quantity];
+
+    db.run(sql, values, function(err){
+        if(err) return document(err)
+
+        return res.status(201).send({
+            item_id: this.next_id,
+            item_name: req.body.item_name,
+            item_price: req.body.item_price,
+            quantity: req.body.quantity
+        });
+    })
+})
+
+app.get("/cartData", (req, res) => {
+    const numberOfItems = carts.reduce(
+        (total,item) => total + item.quantity, 0
+    );
+
+    const totalPrice = carts.reduce(
+        (total,item) => total + (item.item_price + item.quantity), 0
+    );
+
+    return res.status(200).json({
+        number_of_items: numberOfItems,
+        total_price: Number(totalPrice.toFixed(2)),
+        items: carts.map(item => item.item_id)
+    });
+})
+
+app.delete("/cart/:id", (req, res) => {
     let id = parseInt(req.params.id);
-    const user = users.find(temp => temp.user_id === id);
-    if(!user) return res.status(404).send("No user found");
+    const cart = carts.find(temp => temp.item_id === id);
+    if(!cart) return res.status(404).send("No user found");
 
-    const index = users.indexOf(user);
-    users.splice(index, 1);
+    const index = carts.indexOf(cart);
+    carts.splice(index, 1);
 
     return res.status(200).send("User deleted");
 })
 
-app.listen(port, () => {            // Make sure the app can be accessed
+app.patch("/cart/:id", (req, res) => {
+    let id = parseInt(req.params.id);
+    const cart = carts.find(temp => temp.item_id === id);
 
+    if (!cart) return res.status(404).send("This ID doesn't exist");
+
+    cart.quantity = req.body.quantity;
+    return res.status(200).send("The user has been updated");
+})
+
+app.listen(port, () => {            // Make sure the app can be accessed
+    console.log("App is listing on port: " + port);
 })
