@@ -4,7 +4,7 @@ const app = express();              // initialise the express app
 const sqlite3 = require("sqlite3").verbose();
 
 const DBSOURCE = "db.sqlite" // the sqlite file
-
+//test
 let db = new sqlite3.Database(DBSOURCE, (err) => {
     if (err){
         console.error(err.message);
